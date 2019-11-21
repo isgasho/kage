@@ -147,8 +147,8 @@ func TestMonitor_getConsumerOffsets(t *testing.T) {
 			SetCoordinator("test", broker).
 			SetCoordinator("ignore", broker),
 		"ListGroupsRequest": sarama.NewMockWrapper(&sarama.ListGroupsResponse{
-				Err: sarama.ErrNoError,
-			Groups:  map[string]string{"test": "consumer", "unread": "consumer", "ignore": "consumer"},
+			Err:    sarama.ErrNoError,
+			Groups: map[string]string{"test": "consumer", "unread": "consumer", "ignore": "consumer"},
 		}),
 		"FindCoordinatorRequest": sarama.NewMockFindCoordinatorResponse(t).
 			SetCoordinator(sarama.CoordinatorGroup, "test", broker).

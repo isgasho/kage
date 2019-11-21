@@ -1,5 +1,7 @@
 module github.com/msales/kage
 
+go 1.13
+
 require (
 	github.com/Shopify/sarama v1.19.0
 	github.com/Shopify/toxiproxy v2.1.3+incompatible // indirect

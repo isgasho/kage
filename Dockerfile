@@ -1,5 +1,5 @@
 # Build container
-FROM golang:1.11 as builder
+FROM golang:1.13 as builder
 
 ENV GO111MODULE=on
 

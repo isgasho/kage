@@ -1,11 +1,10 @@
-# Kage
+![Logo](http://svg.wiersma.co.za/hamba/project?title=kage&tag=A%20Kafka%20monitoring%20agent)
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/msales/kage)](https://goreportcard.com/report/github.com/msales/kage)
-[![Build Status](https://travis-ci.org/msales/kage.svg?branch=master)](https://travis-ci.org/msales/kage)
-[![Docker build](https://img.shields.io/docker/automated/msales/kage.svg)](https://hub.docker.com/r/msales/kage/)
-[![Coverage Status](https://coveralls.io/repos/github/msales/kage/badge.svg?branch=master)](https://coveralls.io/github/msales/kage?branch=master)
-[![GitHub release](https://img.shields.io/github/release/msales/kage.svg)](https://github.com/msales/kage/releases)
-[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/msales/kage/master/LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/hamba/kage)](https://goreportcard.com/report/github.com/hamba/kage)
+[![Build Status](https://travis-ci.com/hamba/kage.svg?branch=master)](https://travis-ci.com/hamba/kage)
+[![Coverage Status](https://coveralls.io/repos/github/hamba/kage/badge.svg?branch=master)](https://coveralls.io/github/hamba/kage?branch=master)
+[![GitHub release](https://img.shields.io/github/release/hamba/kage.svg)](https://github.com/hamba/kage/releases)
+[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/hamba/kage/master/LICENSE)
 
 ## Synopsis
 
@@ -17,6 +16,12 @@ When you're running Kafka you probably want to have monitoring as well.
 You can - of course - query the beans directly via JMX and work with that, but that requires another JVM that collects the data.  
 If you're a java-shop anyway and have all that available - give it a try.
 We decided that we wanted to get the metrics straight out of Kafka and feed them into InfluxDB in a configurable way - and here we are now.
+
+## A New Beginning
+
+In its current form, Kage as stood the test of time. It however needs to change its form from an InfluxDB
+writer into a Kafka metrics reporter. To that end Kage has been moved here to start its new beginning. 
+It is my hope that more community and get some love.
 
 ## Basic Installation
 
