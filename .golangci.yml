@@ -1,0 +1,25 @@
+run:
+  tests: false
+  timeout: 5m
+linters:
+  enable-all: true
+  disable:
+    - exhaustive
+    - exhaustivestruct
+    - funlen
+    - gochecknoglobals
+    - gochecknoinits
+    - gocognit
+    - goerr113
+    - gomnd
+    - lll # Try remove later
+    - nestif
+    - noctx
+    - nlreturn
+    - scopelint
+    - wsl
+    - wrapcheck
+    - gofumpt
+linters-settings:
+  maligned:
+    suggest-new: true

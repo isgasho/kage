@@ -1,7 +1,7 @@
 package kage
 
 import (
-	"gopkg.in/inconshreveable/log15.v2"
+	"github.com/hamba/pkg/log"
 )
 
 // Application represents the kage application.
@@ -10,7 +10,7 @@ type Application struct {
 	Reporters *Reporters
 	Monitor   Monitor
 
-	Logger log15.Logger
+	Logger log.Logger
 }
 
 // NewApplication creates an instance of Application.
@@ -18,7 +18,7 @@ func NewApplication() *Application {
 	return &Application{}
 }
 
-// Close gracefully shuts down the application
+// Close gracefully shuts down the application.
 func (a *Application) Close() {
 	if a.Store != nil {
 		a.Store.Close()
