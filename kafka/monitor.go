@@ -1,12 +1,12 @@
 package kafka
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/hamba/pkg/log"
+	"github.com/hamba/timex"
 	"github.com/msales/kage/store"
 	"github.com/ryanuber/go-glob"
 )
@@ -63,7 +63,7 @@ func New(opts ...MonitorFunc) (*Monitor, error) {
 
 // Brokers returns a list of Kafka brokers.
 func (m *Monitor) Brokers() []Broker {
-	brokers := []Broker{}
+	var brokers []Broker
 	for _, b := range m.client.Brokers() {
 		connected, _ := b.Connected()
 		brokers = append(brokers, Broker{
@@ -88,7 +88,6 @@ func (m *Monitor) IsHealthy() bool {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -105,22 +104,20 @@ func (m *Monitor) getTopics() map[string]int {
 	// before getting topics and partitions.
 	_ = m.client.RefreshMetadata()
 
-	topics, _ := m.client.Topics()
-
 	topicMap := make(map[string]int)
+
+	topics, _ := m.client.Topics()
 	for _, topic := range topics {
 		partitions, _ := m.client.Partitions(topic)
-
 		topicMap[topic] = len(partitions)
 	}
-
 	return topicMap
 }
 
 // refreshMetadata refreshes the broker metadata.
 func (m *Monitor) refreshMetadata(topics ...string) {
 	if err := m.client.RefreshMetadata(topics...); err != nil {
-		m.log.Error(fmt.Sprintf("could not refresh topic metadata: %v", err))
+		m.log.Error("monitor: could not refresh topic metadata", "error", err)
 	}
 }
 
@@ -128,7 +125,7 @@ func (m *Monitor) refreshMetadata(topics ...string) {
 func (m *Monitor) getBrokerOffsets() {
 	topicMap := m.getTopics()
 
-	requests := make(map[int32]map[int64]*sarama.OffsetRequest)
+	reqs := make(map[int32]map[int64]*sarama.OffsetRequest)
 	brokers := make(map[int32]*sarama.Broker)
 
 	for topic, partitions := range topicMap {
@@ -139,36 +136,36 @@ func (m *Monitor) getBrokerOffsets() {
 		for i := 0; i < partitions; i++ {
 			broker, err := m.client.Leader(topic, int32(i))
 			if err != nil {
-				m.log.Error(fmt.Sprintf("topic leader error on %s:%v: %v", topic, int32(i), err))
+				m.log.Error("monitor: topic leader error", "topic", topic, "partition", int32(i), "error", err)
 				return
 			}
 
-			if _, ok := requests[broker.ID()]; !ok {
+			if _, ok := reqs[broker.ID()]; !ok {
 				brokers[broker.ID()] = broker
-				requests[broker.ID()] = make(map[int64]*sarama.OffsetRequest)
-				requests[broker.ID()][sarama.OffsetOldest] = &sarama.OffsetRequest{}
-				requests[broker.ID()][sarama.OffsetNewest] = &sarama.OffsetRequest{}
+				reqs[broker.ID()] = make(map[int64]*sarama.OffsetRequest)
+				reqs[broker.ID()][sarama.OffsetOldest] = &sarama.OffsetRequest{}
+				reqs[broker.ID()][sarama.OffsetNewest] = &sarama.OffsetRequest{}
 			}
 
-			requests[broker.ID()][sarama.OffsetOldest].AddBlock(topic, int32(i), sarama.OffsetOldest, 1)
-			requests[broker.ID()][sarama.OffsetNewest].AddBlock(topic, int32(i), sarama.OffsetNewest, 1)
+			reqs[broker.ID()][sarama.OffsetOldest].AddBlock(topic, int32(i), sarama.OffsetOldest, 1)
+			reqs[broker.ID()][sarama.OffsetNewest].AddBlock(topic, int32(i), sarama.OffsetNewest, 1)
 		}
 	}
 
 	var wg sync.WaitGroup
-	getBrokerOffsets := func(brokerID int32, position int64, request *sarama.OffsetRequest) {
+	getBrokerOffsets := func(brokerID int32, pos int64, req *sarama.OffsetRequest) {
 		defer wg.Done()
 
-		response, err := brokers[brokerID].GetAvailableOffsets(request)
+		response, err := brokers[brokerID].GetAvailableOffsets(req)
 		if err != nil {
-			m.log.Error(fmt.Sprintf("cannot fetch offsets from broker %v: %v", brokerID, err))
+			m.log.Error("monitor: cannot fetch offsets from broker", "broker", brokerID, "error", err)
 
 			_ = brokers[brokerID].Close()
 
 			return
 		}
 
-		ts := time.Now().Unix() * 1000
+		ts := timex.Unix() * 1000
 		for topic, partitions := range response.Blocks {
 			for partition, offsetResp := range partitions {
 				if offsetResp.Err != sarama.ErrNoError {
@@ -176,18 +173,19 @@ func (m *Monitor) getBrokerOffsets() {
 						offsetResp.Err == sarama.ErrNotLeaderForPartition {
 						// If we get this, the metadata is likely off, force a refresh for this topic
 						m.refreshMetadata(topic)
-						m.log.Info(fmt.Sprintf("metadata for topic %s refreshed due to OffsetResponse error", topic))
+						m.log.Info("monitor: metadata for topic %s refreshed due to OffsetResponse error", "topic", topic)
 						continue
 					}
 
-					m.log.Error(fmt.Sprintf("error in OffsetResponse for %s:%v from broker %v: %s", topic, partition, brokerID, offsetResp.Err.Error()))
+					m.log.Error("monitor: error in OffsetResponse from broker",
+						"topic", topic, "patition", partition, "broker", brokerID, "error", offsetResp.Err)
 					continue
 				}
 
 				offset := &store.BrokerPartitionOffset{
 					Topic:               topic,
 					Partition:           partition,
-					Oldest:              position == sarama.OffsetOldest,
+					Oldest:              pos == sarama.OffsetOldest,
 					Offset:              offsetResp.Offsets[0],
 					Timestamp:           ts,
 					TopicPartitionCount: topicMap[topic],
@@ -198,7 +196,7 @@ func (m *Monitor) getBrokerOffsets() {
 		}
 	}
 
-	for brokerID, requests := range requests {
+	for brokerID, requests := range reqs {
 		for position, request := range requests {
 			wg.Add(1)
 
@@ -225,33 +223,33 @@ func (m *Monitor) getBrokerMetadata() {
 		return
 	}
 
-	response, err := broker.GetMetadata(&sarama.MetadataRequest{})
+	resp, err := broker.GetMetadata(&sarama.MetadataRequest{})
 	if err != nil {
-		m.log.Error(fmt.Sprintf("monitor: cannot get metadata: %v", err))
+		m.log.Error("monitor: cannot get metadata", "error", err)
 		return
 	}
 
 	ts := time.Now().Unix() * 1000
-	for _, topic := range response.Topics {
+	for _, topic := range resp.Topics {
 		if containsString(m.ignoreTopics, topic.Name) {
 			continue
 		}
 		if topic.Err != sarama.ErrNoError {
-			m.log.Error(fmt.Sprintf("monitor: cannot get topic metadata %s: %v", topic.Name, topic.Err.Error()))
+			m.log.Error("monitor: cannot get topic metadata", "topic", topic.Name, "error", topic.Err)
 			continue
 		}
 
-		partitionCount := len(topic.Partitions)
 		for _, partition := range topic.Partitions {
 			if partition.Err != sarama.ErrNoError {
-				m.log.Error(fmt.Sprintf("monitor: cannot get topic partition metadata %s %d: %v", topic.Name, partition.ID, partition.Err.Error()))
+				m.log.Error("monitor: cannot get topic partition metadata",
+					"topic", topic.Name, "partition", partition.ID, "error", partition.Err)
 				continue
 			}
 
 			m.stateCh <- &store.BrokerPartitionMetadata{
 				Topic:               topic.Name,
 				Partition:           partition.ID,
-				TopicPartitionCount: partitionCount,
+				TopicPartitionCount: len(topic.Partitions),
 				Leader:              partition.Leader,
 				Replicas:            partition.Replicas,
 				Isr:                 partition.Isr,
@@ -264,26 +262,26 @@ func (m *Monitor) getBrokerMetadata() {
 // getConsumerOffsets gets all the consumer offsets and send them to the store.
 func (m *Monitor) getConsumerOffsets() {
 	topicMap := m.getTopics()
-	requests := make(map[int32]map[string]*sarama.OffsetFetchRequest)
-	coordinators := make(map[int32]*sarama.Broker)
+	reqs := make(map[int32]map[string]*sarama.OffsetFetchRequest)
+	coords := make(map[int32]*sarama.Broker)
 
 	brokers := m.client.Brokers()
 	for _, broker := range brokers {
 		if ok, err := broker.Connected(); !ok {
 			if err != nil {
-				m.log.Error(fmt.Sprintf("monitor: failed to connect to broker broker %v: %v", broker.ID(), err))
+				m.log.Error("monitor: failed to connect to broker broker", "broker", broker.ID(), "error", err)
 				continue
 			}
 
 			if err := broker.Open(m.client.Config()); err != nil {
-				m.log.Error(fmt.Sprintf("monitor: failed to connect to broker broker %v: %v", broker.ID(), err))
+				m.log.Error("monitor: failed to connect to broker broker", "broker", broker.ID(), "error", err)
 				continue
 			}
 		}
 
 		groups, err := broker.ListGroups(&sarama.ListGroupsRequest{})
 		if err != nil {
-			m.log.Error(fmt.Sprintf("monitor: cannot fetch consumer groups on broker %v: %v", broker.ID(), err))
+			m.log.Error("monitor: cannot fetch consumer groups on broker", "broker", broker.ID(), "error", err)
 			continue
 		}
 
@@ -292,47 +290,45 @@ func (m *Monitor) getConsumerOffsets() {
 				continue
 			}
 
-			coordinator, err := m.client.Coordinator(group)
+			coord, err := m.client.Coordinator(group)
 			if err != nil {
-				m.log.Error(fmt.Sprintf("monitor: cannot fetch co-ordinator for group %s: %v", group, err))
+				m.log.Error("monitor: cannot fetch co-ordinator for group", "group", group, "error", err)
 				continue
 			}
 
-			if _, ok := requests[coordinator.ID()]; !ok {
-				coordinators[coordinator.ID()] = coordinator
-				requests[coordinator.ID()] = make(map[string]*sarama.OffsetFetchRequest)
+			if _, ok := reqs[coord.ID()]; !ok {
+				coords[coord.ID()] = coord
+				reqs[coord.ID()] = make(map[string]*sarama.OffsetFetchRequest)
 			}
 
-			if _, ok := requests[coordinator.ID()][group]; !ok {
-				requests[coordinator.ID()][group] = &sarama.OffsetFetchRequest{ConsumerGroup: group, Version: 1}
+			if _, ok := reqs[coord.ID()][group]; !ok {
+				reqs[coord.ID()][group] = &sarama.OffsetFetchRequest{ConsumerGroup: group, Version: 1}
 			}
 
 			for topic, partitions := range topicMap {
 				for i := 0; i < partitions; i++ {
-					requests[coordinator.ID()][group].AddPartition(topic, int32(i))
+					reqs[coord.ID()][group].AddPartition(topic, int32(i))
 				}
 			}
 		}
 	}
 
 	var wg sync.WaitGroup
-	getConsumerOffsets := func(brokerID int32, group string, request *sarama.OffsetFetchRequest) {
+	getConsumerOffsets := func(brokerID int32, group string, req *sarama.OffsetFetchRequest) {
 		defer wg.Done()
 
-		coordinator := coordinators[brokerID]
-
-		offsets, err := coordinator.FetchOffset(request)
+		offsets, err := coords[brokerID].FetchOffset(req)
 		if err != nil {
-			m.log.Error(fmt.Sprintf("monitor: cannot get group topic offsets %v: %v", brokerID, err))
+			m.log.Error("monitor: cannot get group topic offsets", "broker", brokerID, "error", err)
 
 			return
 		}
 
-		ts := time.Now().Unix() * 1000
+		ts := timex.Unix() * 1000
 		for topic, partitions := range offsets.Blocks {
 			for partition, block := range partitions {
 				if block.Err != sarama.ErrNoError {
-					m.log.Error(fmt.Sprintf("monitor: cannot get group topic offsets %v: %v", brokerID, block.Err.Error()))
+					m.log.Error("monitor: cannot get group topic offsets", "broker", brokerID, "error", block.Err)
 					continue
 				}
 
@@ -354,7 +350,7 @@ func (m *Monitor) getConsumerOffsets() {
 		}
 	}
 
-	for brokerID, groups := range requests {
+	for brokerID, groups := range reqs {
 		for group, request := range groups {
 			wg.Add(1)
 

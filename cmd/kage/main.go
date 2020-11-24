@@ -24,8 +24,6 @@ const (
 	FlagInfluxMetric = "influx.metric"
 	FlagInfluxPolicy = "influx.policy"
 	FlagInfluxTags   = "influx.tags"
-
-	FlagServer = "server"
 )
 
 var version = "¯\\_(ツ)_/¯"
@@ -82,12 +80,6 @@ var agentCommand = &cli.Command{
 			Name:    FlagInfluxTags,
 			Usage:   `"Specify additions tags to add to all metrics (e.g. "tag1=value")"`,
 			EnvVars: []string{"KAGE_INFLUX_TAGS"},
-		},
-
-		&cli.BoolFlag{
-			Name:    FlagServer,
-			Usage:   "Start the http server",
-			EnvVars: []string{"KAGE_SERVER"},
 		},
 	}.Merge(cmd.LogFlags, cmd.ServerFlags),
 	Action: runServer,

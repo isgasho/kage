@@ -41,24 +41,22 @@ func runServer(c *cli.Context) error {
 		}
 	}()
 
-	if c.Bool(FlagServer) {
-		port := c.String(cmd.FlagPort)
-		srv := newServer(app)
-		h := http.Server{Addr: ":" + port, Handler: srv}
-		defer func() {
-			_ = h.Shutdown(context.Background())
-		}()
-		go func() {
-			ctx.Logger().Info("Starting on port " + port)
-			if err := h.ListenAndServe(); err != nil {
-				if errors.Is(err, http.ErrServerClosed) {
-					return
-				}
-				ctx.Logger().Error("Server exited with an error", "error", err)
-				os.Exit(1)
+	port := c.String(cmd.FlagPort)
+	srv := newServer(app)
+	h := http.Server{Addr: ":" + port, Handler: srv}
+	defer func() {
+		_ = h.Shutdown(context.Background())
+	}()
+	go func() {
+		ctx.Logger().Info("Starting on port " + port)
+		if err := h.ListenAndServe(); err != nil {
+			if errors.Is(err, http.ErrServerClosed) {
+				return
 			}
-		}()
-	}
+			ctx.Logger().Error("Server exited with an error", "error", err)
+			os.Exit(1)
+		}
+	}()
 
 	<-cmd.WaitForSignals()
 
